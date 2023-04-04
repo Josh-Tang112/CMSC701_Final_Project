@@ -18,15 +18,26 @@ random entry point.
 
 \begin{itemize}
 
-\item Determine what library to use. Initial research suggests this is zlib.
-\item Determine when index entries can be made 
-\item Determine what information needs to be stored 
-\item Determine what format to store the index data in 
+\item Determine what library to use. Initial research suggests this is zlib,
+    since that's what gzip uses.
+\item Determine when index entries can be made. This may require some trial and
+    error creating index entries at different places, but we're not sure whether
+        we can create an index entry at an arbitrary bit position, or whether it
+        needs to be aligned to some boundary. 
+\item Determine what information needs to be stored. This is mostly a function
+    of looking at the zlib compression and decompression code, and examining the
+    internal state of any exposed data structures to understand what's
+        necessary. 
+\item Determine what format to store the index data in. If they end up being
+    large, may want to look at compressing the data or encoding it somehow.   
 \item Create a library that exposes the ``read starting at sequence number
-        X'' given an index logic.
+        X given an index file'' logic. This will be complete when we have a
+        library we can include in another file with minimal exposed functions
+        required to do parallel reads with e.g. pthreads.
 \item Compare the time to read various sizes of gzipped FASTQ files using a
     number of threads with the index file and our library vs a sequential
-        reader.
+        reader. This will be complete when we've timed the different reads and
+        compared them at various file sizes and thread counts.
 \end{itemize}
 
 \section{Key Questions}
