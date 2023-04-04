@@ -1,0 +1,53 @@
+\documentclass[10pt]{article}
+\usepackage{hyperref}
+\title{Intermediate Progress Report:\\ Compressed Checkpoint Index}
+\author{Josh Tang, Aaron Ortwein, Erik Rye}
+
+\begin{document}
+\maketitle
+\section{Related work}
+
+Kerbiriou and Chikhi examined parallel decompression of FASTQ gzip files to
+speed up genomic algorithms that require FASTQ
+input~\cite{kerbiriou2019parallel}. They do not build an index over the FASTQ
+file by making a pass over it as we attempt to do, but rather attempt to
+reconstruct data from back-references discovered by reading forward from a
+random entry point.
+
+\section{Plan of Work}
+
+\begin{itemize}
+
+\item Determine what library to use. Initial research suggests this is zlib.
+\item Determine when index entries can be made 
+\item Determine what information needs to be stored 
+\item Determine what format to store the index data in 
+\item Create a library that exposes the ``read starting at sequence number
+        X'' given an index logic.
+\item Compare the time to read various sizes of gzipped FASTQ files using a
+    number of threads with the index file and our library vs a sequential
+        reader.
+\end{itemize}
+
+\section{Key Questions}
+
+\begin{enumerate}
+\item Can index entries be made at any  byte indices, or must they be created at
+    a specific point in the gzip file (e.g., at a block boundary?)
+\item what is the data structure in zlib that controls
+    compression/decompression, and what struct members/other state is required
+        in order to reinitialize that structure?
+\item Research suggests the zlib state requires a circular buffer of 32KB; how
+    to best minimize index size?
+\end{enumerate}
+
+\section{Link to your workspace}
+
+Our work is located here:
+\url{https://github.com/Josh-Tang112/CMSC701_Final_Project}
+
+\bibliographystyle{plain}
+\bibliography{refs.bib}
+
+
+\end{document}
