@@ -1,4 +1,7 @@
-all: read-fastq
+all: index-builder index-reader
 
-read-fastq: read-fastq.c
-	gcc -o read-fastq read-fastq.c -lz
+index-builder: index-builder.c
+	gcc -o index-builder index-builder.c -lz
+
+index-reader: index-reader.c
+	gcc -o index-reader index-reader.c -lz
