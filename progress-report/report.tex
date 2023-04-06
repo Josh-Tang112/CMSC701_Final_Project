@@ -14,6 +14,21 @@ file by making a pass over it as we attempt to do, but rather attempt to
 reconstruct data from back-references discovered by reading forward from a
 random entry point.
 
+\texttt{zlib}~\cite{roelofs2005zlib} is a C library written by Mark Adler that
+is able to create and read gzip files. This library will be important for our
+project as it exposes the underlying mechanics for inflating gzip files.
+
+\texttt{pyfastx}~\cite{pyfastx} is a Python C extension that enables random
+reads from FASTA and FASTQ. The functionality that it exposes is similar to our
+overall goal and will be a useful source of information and point of comparison.
+
+\texttt{indexed\_gzip}~\cite{indexedgzip} is a project by Paul McCarthy to
+create an index over compressed NIFTI image files, which use gzip compression by
+default. This will be another useful point of comparison in a tool that needs to
+accomplish a similar task as us.
+
+
+
 \section{Plan of Work}
 
 \begin{itemize}
@@ -45,9 +60,6 @@ random entry point.
 \begin{enumerate}
 \item Can index entries be made at any  byte indices, or must they be created at
     a specific point in the gzip file (e.g., at a block boundary?)
-\item what is the data structure in zlib that controls
-    compression/decompression, and what struct members/other state is required
-        in order to reinitialize that structure?
 \item Research suggests the zlib state requires a circular buffer of 32KB; how
     to best minimize index size?
 \end{enumerate}
