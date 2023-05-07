@@ -1,7 +1,13 @@
-all: index-builder index-reader
+all: index-builder index-reader index-reader-pthread
 
 index-builder: index-builder.c
-	gcc -o index-builder index-builder.c -lz
+	gcc -g -o index-builder index-builder.c -lz
+
+index-reader-pthread: index-reader-pthread.c
+	gcc -g -o index-reader-pthread index-reader-pthread.c -lz
 
 index-reader: index-reader.c
-	gcc -o index-reader index-reader.c -lz
+	gcc -g -o index-reader index-reader.c -lz -lm
+
+clean:
+	rm index-reader index-reader-pthread index-builder

@@ -503,6 +503,16 @@ int main(int argc, char *argv[]) {
              */
             if ((strm.data_type & 128) && !(strm.data_type & 64) &&
                 (totout == 0 || need_idx)) {
+
+                /* We need to make an index point in the sequence-index if this is the very first block */
+                if (totout == 0) {
+                    char msg[MSGSIZE];
+                    snprintf(msg, MSGSIZE, "Making sequence index entry for sequence number %lu", seq_num);
+                    logger(LOG_DEBUG, msg);
+                    /* This position is (totout - strm.avail_out) + i */
+                    seqList = add_seq(seqList, 0, 0, 0);
+                }
+
                 index = addpoint(index, strm.data_type & 7, totin,
                                  totout, strm.avail_out, window);
                 char msg[MSGSIZE];

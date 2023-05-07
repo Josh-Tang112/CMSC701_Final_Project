@@ -4,12 +4,58 @@
 #include <zlib.h>
 #include <getopt.h>
 #include <time.h>
+#include <math.h>
 #include <stdint.h>
 #include <errno.h>
+#include <pthread.h>
 
 #define WINSIZE 32768U          /* sliding window size */
 #define CHUNKSIZE 16384         /* file input buffer size */
 #define MAXLINE 2 * WINSIZE
+#define MSGSIZE 256
+#define MAXTHREADS 16
+
+enum log_level_t {
+    LOG_NOTHING,
+    LOG_CRITICAL,
+    LOG_ERROR,
+    LOG_WARNING,
+    LOG_INFO,
+    LOG_DEBUG,
+    LOG_TRACE
+};
+
+enum log_level_t GLOBAL_LEVEL = LOG_INFO;
+int idx_chunk_size = 10000;
+int num_threads = 4;
+
+
+/* level_to_string is a utility to toggle log levels */
+const char* level_to_string(enum log_level_t level) {
+    switch (level) {
+        case LOG_CRITICAL:
+            return "CRITICAL";
+        case LOG_ERROR:
+            return "ERROR";
+        case LOG_WARNING:
+            return "WARNING";
+        case LOG_INFO:
+            return "INFO";
+        case LOG_DEBUG:
+            return "DEBUG";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+/* Logger prints log messages at the specified granularity to stdout */
+void logger(enum log_level_t level, const char* message) {
+    if (level <= GLOBAL_LEVEL) {
+        time_t now;
+        time (&now);
+        fprintf (stderr,"%ld [%s]: %s\n", now, level_to_string(level), message);
+    }
+}
 
 struct seq_entry {
     int seq_num;       /* Sequence number */
@@ -22,6 +68,29 @@ struct seq_list {
     int size;           /* Number of seq_entries we can have */
     void *seq_entry;    /* List of seq_entries */
 };
+
+/* task_args contains a pointer to the index struct and the seq chunk struct */
+struct task_args {
+    int tid;                                    /* Thread id */
+    int start;                                  /* start seq chunk */
+    int stop;                                   /* end seq chunk */
+    char * filename;                            /* gz filename to read */
+    struct access * index;                      /* Index point list */
+    struct seq_list * list;                     /* Sequence point list */
+};
+
+
+/* struct extract_info contains all of the information
+ * necessary for the call to extract() to do what it needs to
+ * do */
+struct extract_info{
+    char * filename;
+    struct access * index;
+    struct point * this_block;
+    off_t seq_offset;
+    int nchunks;
+};
+
 
 int base64_decode(char* input, size_t input_len, char* output, size_t output_len) {
     int i, j;
@@ -178,18 +247,21 @@ static struct access *add_read_point(struct access *index, int bits,
     return index;
 }
 
-static int extract(FILE *in, struct access *index, struct point * this,
-        off_t seq_offset, unsigned char *buf, int chunksize)
+char * extract(char * filename, struct access *index, struct point * this,
+        off_t seq_offset, int nchunks)
 {
-    int ret, skip, seq_num, out_idx;
+    int ret, skip, seq_num;
     z_stream strm;
     unsigned char input[CHUNKSIZE];
     unsigned char discard[WINSIZE];
-    int len;
-    int totout = seq_num = out_idx = 0;
-    int line_num = skip = 1;
-    int buffsize = 2 * WINSIZE;
+    unsigned char buf[WINSIZE];
+    off_t out_idx = 0;
+    off_t line_num = 1;
+    off_t totout = seq_num = 0;
+    skip = 1;
+    off_t buffsize = 2 * WINSIZE;
     char * output = (char *) malloc(buffsize * sizeof(char));
+    FILE *in;
 
     /* initialize file and inflate state to start there */
     strm.zalloc = Z_NULL;
@@ -199,18 +271,22 @@ static int extract(FILE *in, struct access *index, struct point * this,
     strm.next_in = Z_NULL;
     ret = inflateInit2(&strm, -15);         /* raw inflate */
     if (ret != Z_OK)
-        return ret;
+        return NULL;
 
-    printf("This->in: %lu\n", this->in);
-    printf("Offset: %lu\n", this->in - (this->bits ? 1 : 0));
     off_t seek_offset = this->in - (off_t) (this->bits ? 1 : 0);
-    printf("Offset: %lu\n", seek_offset);
+
+    //Open the gz file
+    in = fopen(filename, "rb");
+    if (NULL == in) {
+        fprintf(stderr, "Error opening %s for reading\n", filename);
+        exit(-1);
+    }
 
     ret = fseeko(in, seek_offset, SEEK_SET);
     if (ret == -1) {
         perror("failed");
         printf("Error seeking to offset: %s\n", strerror(errno));
-        goto deflate_index_extract_ret;
+        exit(-1);
     }
     if (this->bits) {
         ret = getc(in);
@@ -222,33 +298,22 @@ static int extract(FILE *in, struct access *index, struct point * this,
     }
     (void)inflateSetDictionary(&strm, this->window, WINSIZE);
 
+
     /* skip uncompressed bytes until offset reached, then satisfy request */
-    printf("seq_offset: %lu\n", seq_offset);
     seq_offset -= this->out;
     strm.avail_in = 0;
     do {
         /* define where to put uncompressed data, and how much */
         if (seq_offset > WINSIZE) {             /* skip WINSIZE bytes */
-            printf("Skipping WINSIZE bytes\n");
             strm.avail_out = WINSIZE;
             strm.next_out = discard;
             seq_offset -= WINSIZE;
 
-/*
-            for (int i = 0; i < strm.avail_out; i++) {
-                printf("%c", discard[i]);
-            }
-*/
         }
         else if (seq_offset > 0) {              /* last skip */
             strm.avail_out = (unsigned)seq_offset;
             strm.next_out = discard;
             seq_offset = 0;
-/*
-            for (int i = 0; i < strm.avail_out; i++) {
-                printf("%c", discard[i]);
-            }
-*/
         }
         else if (skip) {                    /* at offset now */
             strm.avail_out = WINSIZE;
@@ -270,23 +335,24 @@ static int extract(FILE *in, struct access *index, struct point * this,
                             seq_num++;
                             /* If we've seen the total number of sequences we need to,
                              * return the buffer we've been building */
-                            if ((seq_num % chunksize) == 0) {
-                                printf("Stopping at seqnum %d\n", seq_num);
-                                printf("Buf: %s\n", output);
-                                exit(12);
+                            if ((nchunks > 0) && (seq_num % nchunks) == 0) {
                                 /* This position is (totout - strm.avail_out) + i */
+                                goto deflate_index_extract_ret;
                             }
                         }
                     line_num++;
                     }
 
                    //Check if we need to double the output buffer size
-                   if (out_idx == buffsize) {
-                       printf("Reallocating, buffsize: %d\n", buffsize);
+                   if (out_idx == buffsize-1) {
                        buffsize *= 2;
                        output = (char*) realloc(output, buffsize * sizeof(char));
+                       output[buffsize] = '\0';
+                       if (NULL == output) {
+                           logger(LOG_ERROR, "Got NULL returned from realloc, failing");
+                           exit(1);
+                       }
                    }
-
                 }
             }
         }
@@ -317,7 +383,6 @@ static int extract(FILE *in, struct access *index, struct point * this,
                 /* the raw deflate stream has ended */
                 if (index->have == 0) {
                     /* this is a zlib stream that has ended -- done */
-                    printf("Doing this break\n");
                     break;
                 }
 
@@ -334,7 +399,6 @@ static int extract(FILE *in, struct access *index, struct point * this,
                 }
                 if (strm.avail_in == 0 && ungetc(getc(in), in) == EOF) {
                     /* the input ended after the gzip trailer -- done */
-                    printf("Doing this break2\n");
                     break;
                 }
 
@@ -377,8 +441,6 @@ static int extract(FILE *in, struct access *index, struct point * this,
         if (ret == Z_STREAM_END) {
             /* reached the end of the compressed data -- return the data that
                was available, possibly less than requested */
-            printf("Reached the stream end\n");
-            printf("avail-out: %d\n", strm.avail_out);
             //strm.avail_out = WINSIZE;
             strm.next_out = buf;
             //skip = 0;                       /* only do this once */
@@ -394,10 +456,12 @@ static int extract(FILE *in, struct access *index, struct point * this,
                             seq_num++;
                             /* If we've seen the total number of sequences we need to,
                              * return the buffer we've been building */
-                            if ((seq_num % chunksize) == 0) {
-                                printf("Stopping at seqnum %d\n", seq_num);
-                                printf("Buf: %s\n", output);
-                                exit(12);
+                            if ((nchunks > 0) && (seq_num % nchunks) == 0) {
+/*
+                                output[out_idx] = '\0';
+                                return output;
+*/
+                                goto deflate_index_extract_ret;
                                 /* This position is (totout - strm.avail_out) + i */
                             }
                         }
@@ -405,10 +469,14 @@ static int extract(FILE *in, struct access *index, struct point * this,
                     }
 
                     //Check if we need to double the output buffer size
-                    if (out_idx == buffsize) {
-                        printf("Reallocating, buffsize: %d\n", buffsize);
+                    if (out_idx == buffsize-1) {
                         buffsize *= 2;
                         output = (char*) realloc(output, buffsize * sizeof(char));
+                        output[buffsize] = '\0';
+                        if (NULL == output) {
+                            logger(LOG_ERROR, "Got NULL returned from realloc, failing");
+                            exit(1);
+                        }
                     }
                 }
             }
@@ -418,44 +486,115 @@ static int extract(FILE *in, struct access *index, struct point * this,
         /* do until offset reached and requested data read */
     } while (1);
 
-    printf("Got here after the while\n");
-
-    /* compute the number of uncompressed bytes read after the offset */
-    ret = skip ? 0 : len - strm.avail_out;
-
     /* clean up and return the bytes read, or the negative error */
     deflate_index_extract_ret:
-/*
-    for (int i = 0; i < strm.avail_out; i++) {
-        printf("%c", strm.next_out[i]);
-    }
-*/
 
+    fclose(in);
     (void)inflateEnd(&strm);
 
-
-    return ret;
-
+    output[out_idx] = '\0';
+    return output;
 
 }
 
+void * task(void *arg) {
+
+    off_t seq_offset, block_num;
+    struct task_args ta = *(struct task_args *) arg;
+    off_t out_size = WINSIZE;
+    off_t total_bytes = 0;
+
+    /* Get this sequence entry */
+    //struct seq_entry * this_chunk = ta.list->seq_entry + (i * sizeof(struct seq_entry));
+    struct seq_entry * this_chunk = ta.list->seq_entry + (ta.start * sizeof(struct seq_entry));
+    int nchunks;
+    if (ta.stop > 0) {
+        nchunks = (ta.stop - ta.start) * idx_chunk_size;
+    } else {
+        nchunks = -1;
+    }
+
+    /* Offset into the file the start of this chunk of sequence reads is (uncompressed) */
+    seq_offset = this_chunk->start;
+
+
+    /* Block number that it corresponds with */
+    block_num = this_chunk->block;
+
+    /* Get the block structure */
+    struct point * this_block = ta.index->list + block_num;
+    char * ret = extract(ta.filename, ta.index, this_block, seq_offset, nchunks);
+
+    /* check that we got some data */
+    if (strlen(ret) < 0) {
+        logger(LOG_ERROR, "Thread returned < 0 length string");
+        exit(-1);
+    }
+
+    pthread_exit((void *) ret);
+}
+
+//Prints the usage information on error
+void print_usage(char *argv[]) {
+    fprintf(stderr, "Usage: %s [-n N_THREADS] GZIP-INDEX.IDX SEQUENCE-INDEX.SEQ-IDX GZIP_FILE \n", argv[0]);
+}
+
+void print_help(char *argv[]) {
+    fprintf(stderr, "index-reader reads prebuilt index files for a gzipped FASTQ ");
+    fprintf(stderr, "file to allow for parallel processing\n\n");
+    fprintf(stderr, "Usage: %s [-n N_THREADS] GZIP-INDEX.IDX SEQUENCE-INDEX.SEQ-IDX GZIP_FILE \n", argv[0]);
+    fprintf(stderr, "-n N_THREADS\tthe number of thread (<=16) to use (default 4)");
+    fprintf(stderr, "-v\t\tenable verbose logging\n");
+    fprintf(stderr, "GZIP-INDEX.IDX\t<index file> is a CSV index file for the GZIP FASTQ file's blocks\n");
+    fprintf(stderr, "SEQUENCE-INDEX.IDX\t<index file> is a CSV index file for the GZIP FASTQ file's sequences\n");
+    fprintf(stderr, "GZIP_FILE\t<gzip file> is a gzipped FASTQ file to index\n");
+}
+
 int main(int argc, char *argv[]) {
+
     FILE* fp;
     char line[MAXLINE];
     char* token;
-    struct access * index;
+    struct access * index = NULL;
     struct seq_list * list;
-    struct point pt;
+    struct point pt = {0};
     struct seq_entry se;
     unsigned char buf[CHUNKSIZE];
+    char msg[MSGSIZE];
+    pthread_t threads[MAXTHREADS];
 
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s index.csv seq-index.csv file.gz\n", argv[0]);
+
+    int opt;
+    while ((opt = getopt(argc, argv, "c:ho:vn:")) != -1) {
+        switch (opt) {
+            case 'c': //chunk size
+                idx_chunk_size = atoi(optarg);
+                break;
+            case 'v':
+                GLOBAL_LEVEL = LOG_DEBUG;
+                logger(LOG_DEBUG, "Debug logging enabled");
+                break;
+            case 'n':
+                num_threads = atoi(optarg);
+                break;
+            default:
+                print_usage(argv);
+                return 1;
+        }
+    }
+
+    if (optind >= argc) {
+        print_usage(argv);
         return -1;
     }
 
-    // Open the CSV file for reading
-    fp = fopen(argv[1], "r");
+    snprintf(msg, MSGSIZE, "Running with %d threads", num_threads);
+    logger(LOG_INFO, msg);
+
+    /* Open and read the GZIP index CSV file.
+   * Add each struct point to the index access point list as we read it
+   */
+    fp = fopen(argv[optind], "r");
     if (fp == NULL) {
         printf("Error opening the file.\n");
         exit(1);
@@ -465,58 +604,92 @@ int main(int argc, char *argv[]) {
     while (fgets(line, MAXLINE, fp) != NULL) {
 
         int decoded_len;
-        char * decoded_string;
+        char * decoded_string = NULL;
 
-        /* Ignore comments */
+        /* Ignore comments, except the one with the sequence number hint */
         if (line[0] == '#') {
+
+            char * substr = strstr(line, "#sequence_skip:");
+
+            /* Didn't find the sequence */
+            if (substr == NULL) {
+                continue;
+            }
+
+            // Extract the number using strtok()
+            char * token = strtok(substr, " ");
+
+            if (token == NULL) {
+                logger(LOG_ERROR, "Error: no token found after #sequence:");
+                return 1;
+            }
+
+            token = strtok(NULL, " ");
+
+            if (token == NULL) {
+                logger(LOG_ERROR, "Error: no number found after #sequence:");
+                return 1;
+            }
+            // Convert the number to an integer
+            idx_chunk_size = atoi(token);
+
+            snprintf(msg, MSGSIZE, "Read sequence number %d", idx_chunk_size);
+            logger(LOG_DEBUG, msg);
             continue;
         }
 
-        /* Start sequence number */
+        /* Block number */
         token = strtok(line, ",");
 
-
+        /* out_offset */
         token = strtok(NULL, ",");
         pt.out = atol(token);
 
+        /* in_offset */
         token = strtok(NULL, ",");
         pt.in = atol(token);
 
+        /* bits offset */
         token = strtok(NULL, ",");
         pt.bits = atoi(token);
 
+        /* window */
         token = strtok(NULL, ",");
 
-
-        size_t encoded_len = strlen(token);
+        size_t encoded_len = strlen(token); //remove the \n
 
         // Calculate the maximum length of the decoded string
         size_t max_decoded_len = (encoded_len * 3);
         decoded_string = (char*)malloc(max_decoded_len + 1);
 
         if (decoded_string == NULL) {
-            printf("Error: Memory allocation failed.\n");
+            logger(LOG_ERROR, "Error: Memory allocation failed");
             return 1;
         }
 
         decoded_len = base64_decode(token, encoded_len, decoded_string, max_decoded_len);
         if ((decoded_len) < 0) {
-            fprintf(stderr, "Error: Decoded_len < 0\n");
+            logger(LOG_ERROR, "Error: Decoded length < 0");
             exit(129);
         }
+
         decoded_string[WINSIZE] = '\0';
         strcpy(pt.window, decoded_string);
 
         index = add_read_point(index, pt.bits, pt.in, pt.out, decoded_string);
     }
-
     // Close the file
     fclose(fp);
 
-    // Open the sequence CSV file for reading
-    fp = fopen(argv[2], "r");
+    snprintf(msg, MSGSIZE, "Read %d points from %s", index->have, argv[optind]);
+    logger(LOG_DEBUG, msg);
+    optind++;
+
+    /* Open and read the sequence index CSV file.
+ * Add each sequence to the sequence list as we read it */
+    fp = fopen(argv[optind], "r");
     if (fp == NULL) {
-        printf("Error opening the sequence-index file.\n");
+        logger(LOG_ERROR, "Error opening the sequence-index file");
         exit(1);
     }
 
@@ -539,44 +712,165 @@ int main(int argc, char *argv[]) {
 
         list = add_seq(list, se.seq_num, se.start, se.block);
     }
-
     // Close the file
     fclose(fp);
+    snprintf(msg, MSGSIZE, "Read %d points from %s", list->have, argv[optind]);
+    logger(LOG_DEBUG, msg);
+    optind++;
 
-    //Open the gz file
-    FILE *in;
-    in = fopen(argv[3], "rb");
-    if (NULL == in) {
-        fprintf(stderr, "Error opening %s for reading\n", argv[2]);
+    /* If we have more threads than sequence chunks, reduce the number of threads */
+    if (num_threads > list->have) {
+        snprintf(msg, MSGSIZE, "Setting num_threads to %d from %d", list->have, num_threads);
+        logger(LOG_INFO, msg);
+        num_threads = list->have;
+    } else if (num_threads > MAXTHREADS) {
+        snprintf(msg, MSGSIZE, "Max number of threads is %d", MAXTHREADS);
+        logger(LOG_INFO, msg);
+        num_threads = MAXTHREADS;
     }
 
-    int chunksize = 10000;
-    int n = 20000000;
-    int block;
-    off_t seq_offset = 0;
-    for (int i = 0; i < list->have; i++) {
-        struct seq_entry* this = list->seq_entry + (i * sizeof(struct seq_entry)); /* Get the next seq_entry */
-        if (this->seq_num == n) {
-            seq_offset = this->start;
-            block = this->block;
-            break;
+
+    struct task_args args[MAXTHREADS] = {0};
+    // create threads
+    for (int i = 0; i < num_threads; i++) {
+        snprintf(msg, MSGSIZE, "Starting thread %d", i);
+        logger(LOG_DEBUG, msg);
+
+        double float_stride = (double)  list->have / num_threads;
+        int stride = (int) floor(float_stride);
+        int thread_start = stride * i;
+        int thread_end;
+
+        if ((stride * (i + 1)) < list->have) {
+            thread_end = stride * (i + 1);
+        } else {
+            thread_end = list->have;
         }
+
+        /* Set up the args struct for this thread */
+        args[i].tid = i;
+        args[i].filename = strndup(argv[optind], strlen(argv[optind]));
+        args[i].index = index;
+        args[i].list = list;
+        args[i].start = thread_start;
+
+        //last thread, read until end
+        if (i == (num_threads - 1))
+            args[i].stop = -1;
+        else
+            args[i].stop = thread_end;
+
+        pthread_create(&threads[i], NULL, task, &args[i]);
     }
 
-    //This is the index point we want
-    struct point * idx_point = index->list + block;
+    char * thread_results[MAXTHREADS];
+    // wait for threads to finish
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], (void **) &thread_results[i]);
+        //pthread_join(threads[i], (void *) thread_results[i]);
+        //thread_results[i] = malloc(strlen(res));
+        //strncpy(thread_results[i], res, strlen(res));
 
-    int len = extract(in, index, idx_point, seq_offset, buf, chunksize);
-    if (len < 0)
-        fprintf(stderr, "zran: extraction failed: %s error\n",
-                len == Z_MEM_ERROR ? "out of memory" : "input corrupted");
-    else {
-        //fwrite(buf, 1, len, stdout);
-        fprintf(stderr, "zran: extracted %d bytes from point %d\n", len, 10000);
+        //printf("Thread: %d\n", i);
+        //printf("i: %d: %s\n", i, res);
     }
 
-    /* clean up and exit */
+    off_t size = 0;
+    for (int i = 0; i < num_threads; i++) {
+/*
+        printf("%s", thread_results[i]);
+        fflush(stdout);
+*/
+        size += strlen(thread_results[i]);
+    }
+
+    printf("total len: %ld\n", size);
+
+    FILE* file = fopen("output.txt", "w");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return 1;
+    }
+
+    for (int i = 0; i < num_threads; i++) {
+        fputs(thread_results[i], file);
+        //fputc('\n', file); // add newline character after each string
+    }
+
+    fclose(file);
+
+
+/*
+    int block_num;
+    off_t seq_offset;
+
+    */
+/* Iterate over each one of the list->seq_entries and get the text associated with it*//*
+
+    for (int i = 0; i < list->have; i++) {
+
+        */
+/* Get the parameters necessary for extract() into a struct
+         * in preparation for a pthread call *//*
+
+        struct extract_info * thread_args = malloc(sizeof(struct extract_info));
+        */
+/* Copy filename *//*
+
+        thread_args->filename = strndup(argv[optind], strlen(argv[optind]));
+        */
+/* Point at the index *//*
+
+        thread_args->index = index;
+
+        */
+/* Get the next seq_entry *//*
+
+        struct seq_entry * this_chunk = list->seq_entry + (i * sizeof(struct seq_entry));
+
+        */
+/* Offset into the file the start of this chunk of sequence reads is (uncompressed) *//*
+
+        seq_offset = this_chunk->start;
+        thread_args->seq_offset = seq_offset;
+
+        */
+/* Block number that it corresponds with *//*
+
+        block_num = this_chunk->block;
+        */
+/* Get the block structure *//*
+
+        struct point * this_block = index->list + block_num;
+        thread_args->this_block = this_block;
+
+        thread_args->nchunks = idx_chunk_size;
+
+        //char * ret = extract(in, index, this_block, seq_offset, buf, idx_chunk_size);
+        char * ret = extract(thread_args);
+
+        */
+/* check that we got some data *//*
+
+        if (strlen(ret) < 0) {
+            fprintf(stderr, "zran: extraction failed\n");
+            exit(-1);
+        }
+
+        printf("%s", ret);
+
+        */
+/* Was allocated by extract() *//*
+
+        free(ret);
+    }
+
+
+    */
+/* clean up and exit *//*
+
     free_index(index);
+*/
 
     return 0;
 }
