@@ -1,6 +1,7 @@
 \documentclass[10pt]{article}
 \usepackage{hyperref}
 \usepackage{xspace}
+\usepackage{graphicx}
 \newcommand{\zlib}{\texttt{zlib}\xspace}
 
 \title{Final Project Report:\\ Compressed Checkpoint Index \& Parallel GZIP
@@ -41,10 +42,10 @@ accomplish a similar task as us.
 Identifier\end{tabular}}} & \multicolumn{1}{c}{\textbf{Source}} &
     \multicolumn{1}{c}{\textbf{Sequence Reads}} & \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}FASTQ GZ \\ Size (MB)\end{tabular}}} \\
 \hline\\
-SRR3295681                                                                                      & Salmonella enterica                 & 959,879                                     & 205                                                                                        \\
-SRR2121685                                                                                      & Mus musculus                        & 27,928,438                                  & 2,078                                                                                      \\
-SRR925811                                                                                       & Homo sapiens                        & 53,265,409                                  & 3,349                                                                                      \\
-SRR925816                                                                                       & Homo sapiens                        & 71,504,007                                  & 5,046
+SRR3295681 (Small)& Salmonella enterica & 959,879 & 205\\
+SRR2121685 (Medium) & Mus musculus & 27,928,438 & 2,078\\
+SRR925811  (Large) & Homo sapiens & 53,265,409 & 3,349 \\
+SRR925816 (XL) & Homo sapiens & 71,504,007 & 5,046
 \end{tabular}
     \label{tab:source}
 \end{table}
@@ -68,6 +69,18 @@ We implemented our solution in C in order to take advantage of the library
 
 \subsection{Methodology}
 
+
+\begin{figure}
+    \includegraphics[width=\linewidth]{figs/cores.pdf}
+    \label{fig:cores}
+    \caption{Time to read differently-sized FASTQ gzip files using a pre-built
+    index file and different numbers of threads. Time compasses total program
+    execution, including reading the index files, parallel reading the gzip
+    file with $N$ threads, and writing the reconstituted file to disk. Time for
+    \texttt{zcat} to read the file and write it to disk is shown for comparison
+    using a dotted line (\texttt{zcat} execution is single threaded). See
+    Table~\ref{tab:source} for descriptions of small, medium, large, and XL.}
+\end{figure}
 \subsection{Results}
 
 \section{Link to your workspace}
