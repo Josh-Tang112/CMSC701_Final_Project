@@ -1,0 +1,82 @@
+\documentclass[10pt]{article}
+\usepackage{hyperref}
+\usepackage{xspace}
+\newcommand{\zlib}{\texttt{zlib}\xspace}
+
+\title{Final Project Report:\\ Compressed Checkpoint Index \& Parallel GZIP
+Reader}
+\author{Josh Tang, Aaron Ortwein, Erik Rye}
+
+\begin{document}
+\maketitle
+
+\section{Related Work}
+
+Kerbiriou and Chikhi examined parallel decompression of FASTQ gzip files to
+speed up genomic algorithms that require FASTQ
+input~\cite{kerbiriou2019parallel}. They do not build an index over the FASTQ
+file by making a pass over it as we attempt to do, but rather attempt to
+reconstruct data from back-references discovered by reading forward from a
+random entry point.
+
+\texttt{zlib}~\cite{zlib} is a C library written by Mark Adler and others that
+is able to create and read gzip files. This library will be important for our
+project as it exposes the underlying mechanics for inflating gzip files.
+
+\texttt{pyfastx}~\cite{pyfastx} is a Python C extension that enables random
+reads from FASTA and FASTQ. The functionality that it exposes is similar to our
+overall goal and will be a useful source of information and point of comparison.
+
+\texttt{indexed\_gzip}~\cite{indexedgzip} is a project by Paul McCarthy to
+create an index over compressed NIFTI image files, which use gzip compression by
+default. This will be another useful point of comparison in a tool that needs to
+accomplish a similar task as us.
+
+\begin{table}[ht]
+    \caption{Four sources of FASTQ data were used in our study. The FASTQ files
+    were gzip compressed for our index-building and parallel reading
+    experiments.}
+\begin{tabular}{r|l|r|r}
+\multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}Sequence Read\\
+Identifier\end{tabular}}} & \multicolumn{1}{c}{\textbf{Source}} &
+    \multicolumn{1}{c}{\textbf{Sequence Reads}} & \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}FASTQ GZ \\ Size (MB)\end{tabular}}} \\
+\hline\\
+SRR3295681                                                                                      & Salmonella enterica                 & 959,879                                     & 205                                                                                        \\
+SRR2121685                                                                                      & Mus musculus                        & 27,928,438                                  & 2,078                                                                                      \\
+SRR925811                                                                                       & Homo sapiens                        & 53,265,409                                  & 3,349                                                                                      \\
+SRR925816                                                                                       & Homo sapiens                        & 71,504,007                                  & 5,046
+\end{tabular}
+    \label{tab:source}
+\end{table}
+
+\section{Data Sources}
+
+We used four reference FASTQ sequence reads from the Sequence Read
+Archive~\cite{SRA} for our testing and analysis. Table~\ref{tab:source} is a
+tabular depiction of the data sets that we used for this project. We chose these
+files because they represented a wide range of numbers of sequence reads, which
+translates into a wide range of gzip file sizes for our tool to contend with.
+Indeed, the largest FASTQ gzip file we consider is approximately 25 times as
+large as the shortest.
+
+\section{Index Creation Tool \& Methodology}
+
+We implemented our solution in C in order to take advantage of the library
+\zlib~\cite{zlib}. \zlib is a C library written by Mark Adler
+
+\section{Parallel Reading}
+
+\subsection{Methodology}
+
+\subsection{Results}
+
+\section{Link to your workspace}
+
+Our work is located here:
+\url{https://github.com/Josh-Tang112/CMSC701_Final_Project}
+
+\bibliographystyle{plain}
+\bibliography{refs.bib}
+
+
+\end{document}
