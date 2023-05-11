@@ -1,19 +1,68 @@
-\documentclass[10pt]{article}
+\documentclass[unnumsec,webpdf,contemporary,large]{oup-authoring-template}
 \usepackage{hyperref}
 \usepackage{xspace}
 \usepackage{graphicx}
 \newcommand{\zlib}{\texttt{zlib}\xspace}
-
-\title{Final Project Report:\\ Compressed Checkpoint Index \& Parallel GZIP
-Reader}
-\author{Josh Tang, Aaron Ortwein, Erik Rye}
+\newcommand{\gzip}{gzip\xspace}
 
 \begin{document}
+
+\journaltitle{CMSC701 Final Project}
+\DOI{}
+\copyrightyear{2023}
+\pubyear{2023}
+\appnotes{Final Project}
+
+\firstpage{1}
+
+%\subtitle{Subject Section}
+
+\title[Compressed Checkpoint Index]{Final Project Report: Compressed Checkpoint
+Index \& Parallel \gzip Reader}
+
+\author[1]{Erik Rye}
+\author[1]{Josh Tang}
+\author[1]{Aaron Ortwein}
+
+%\authormark{Author Name et al.}
+
+\address[1]{\orgdiv{Computer Science Department}, \orgname{University of
+Maryland}, \orgaddress{\street{8125 Paint Branch Dr, College Park},
+\postcode{20742}, \state{MD}, \country{USA}}}
+
+%\corresp[$\ast$]{Corresponding author. \href{email:email-id.com}{email-id.com}}
+
+%\received{Date}{0}{Year}
+%\revised{Date}{0}{Year}
+%\accepted{Date}{0}{Year}
+
+\abstract{We devise and describe a tool for creating an index over a \gzip FASTQ
+file. Unlike standard index-creation tools, our tool and the indices that it
+creates incorporate a user-specified number of sequence reads that should be
+split into each index. This allows a different tool that reads a FASTQ \gzip
+file with our pre-built index over it to efficiently process the sequence reads
+\emph{in parallel}, rather than needing to process the entire file serially.
+This can result in a dramatic speedup for some applications, as we demonstrate
+with the simple use case of reading the entire FASTQ file into memory and
+writing the decompressed result back to a file.}
+
+\keywords{FASTQ, \gzip, Compression, Parallel Processing}
+
+% \boxedtext{
+% \begin{itemize}
+% \item Key boxed text here.
+% \item Key boxed text here.
+% \item Key boxed text here.
+% \end{itemize}}
+
 \maketitle
+
+
+\section{Introduction}
 
 \section{Related Work}
 
-Kerbiriou and Chikhi examined parallel decompression of FASTQ gzip files to
+Kerbiriou and Chikhi examined parallel decompression of FASTQ \gzip files to
 speed up genomic algorithms that require FASTQ
 input~\cite{kerbiriou2019parallel}. They do not build an index over the FASTQ
 file by making a pass over it as we attempt to do, but rather attempt to
@@ -21,21 +70,22 @@ reconstruct data from back-references discovered by reading forward from a
 random entry point.
 
 \texttt{zlib}~\cite{zlib} is a C library written by Mark Adler and others that
-is able to create and read gzip files. This library will be important for our
-project as it exposes the underlying mechanics for inflating gzip files.
+is able to create and read \gzip files. This library will be important for our
+project as it exposes the underlying mechanics for inflating \gzip files.
 
 \texttt{pyfastx}~\cite{pyfastx} is a Python C extension that enables random
 reads from FASTA and FASTQ. The functionality that it exposes is similar to our
 overall goal and will be a useful source of information and point of comparison.
 
 \texttt{indexed\_gzip}~\cite{indexedgzip} is a project by Paul McCarthy to
-create an index over compressed NIFTI image files, which use gzip compression by
+create an index over compressed NIFTI image files, which use \gzip compression by
 default. This will be another useful point of comparison in a tool that needs to
 accomplish a similar task as us.
 
-\begin{table}[ht]
+\begin{table*}[ht]
+    \centering
     \caption{Four sources of FASTQ data were used in our study. The FASTQ files
-    were gzip compressed for our index-building and parallel reading
+    were \gzip compressed for our index-building and parallel reading
     experiments.}
 \begin{tabular}{r|l|r|r}
 \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}Sequence Read\\
@@ -48,42 +98,45 @@ SRR925811  (Large) & Homo sapiens & 53,265,409 & 3,349 \\
 SRR925816 (XL) & Homo sapiens & 71,504,007 & 5,046
 \end{tabular}
     \label{tab:source}
-\end{table}
+\end{table*}
 
-\section{Data Sources}
+\section{Methodology}
+
+\subsection{Data Sources}
 
 We used four reference FASTQ sequence reads from the Sequence Read
 Archive~\cite{SRA} for our testing and analysis. Table~\ref{tab:source} is a
 tabular depiction of the data sets that we used for this project. We chose these
 files because they represented a wide range of numbers of sequence reads, which
-translates into a wide range of gzip file sizes for our tool to contend with.
-Indeed, the largest FASTQ gzip file we consider is approximately 25 times as
+translates into a wide range of \gzip file sizes for our tool to contend with.
+Indeed, the largest FASTQ \gzip file we consider is approximately 25 times as
 large as the shortest.
 
-\section{Index Creation Tool \& Methodology}
+\subsection{Index Creation Tool \& Methodology}
 
 We implemented our solution in C in order to take advantage of the library
-\zlib~\cite{zlib}. \zlib is a C library written by Mark Adler
+\zlib~\cite{zlib}. \zlib is a C library written and maintained by Jean-loup
+Gailly and Mark Adler since 1995. 
 
-\section{Parallel Reading}
-
-\subsection{Methodology}
+\subsection{Parallel Reading}
 
 
 \begin{figure}
     \includegraphics[width=\linewidth]{figs/cores.pdf}
     \label{fig:cores}
-    \caption{Time to read differently-sized FASTQ gzip files using a pre-built
+    \caption{Time to read differently-sized FASTQ \gzip files using a pre-built
     index file and different numbers of threads. Time compasses total program
-    execution, including reading the index files, parallel reading the gzip
+    execution, including reading the index files, parallel reading the \gzip
     file with $N$ threads, and writing the reconstituted file to disk. Time for
     \texttt{zcat} to read the file and write it to disk is shown for comparison
     using a dotted line (\texttt{zcat} execution is single threaded). See
     Table~\ref{tab:source} for descriptions of small, medium, large, and XL.}
 \end{figure}
-\subsection{Results}
 
-\section{Link to your workspace}
+
+\section{Results}
+
+\section{Conclusion and Future Work}
 
 Our work is located here:
 \url{https://github.com/Josh-Tang112/CMSC701_Final_Project}
