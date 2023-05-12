@@ -68,7 +68,7 @@ Here we try to solve the problem of decompressing a gzip compressed FASTQ files 
 This startegies of building indices can scale to hundreds of threads and make it easier for our program to be part of the pipeline of other multithreading or multiprocessing genomics tools. 
 \subsection{Challenge of Multithreading}
 Some of the challenges multithreading will pose can be seen in Figure 1. Figure 1 shows how bad multithreading can be if handled incorrectly. We can see that if a thread needs to read from or write to a file, it needs exclusive right to the file so that the file won't be changed when it's reading it. This is usually done by using locks. Unfortunately, even though multiple threads can have read lock of the same file, operating system does not really allows them to read the file simultaneously. That means if multiple thread is trying to read a file, most of them cannot do anything and has to wait for that one thread to complete first. The same applies to writing to a file as well. Therefore, it's important to structure the program and choose parameters wisely so that the time spent waiting for each thread is minimum. 
-\begin{figure}
+\begin{figure}[H]
     \includegraphics[width=\linewidth]{figs/multithread.jpeg}
     \label{fig:multithread}
     \caption{This figure shows 4 threads running simultaneously . Time progress from top to bottom. Gray area represents time spent waiting instead of operating. Black area represents threads doing operations that require exclusive rights to certain resources. ~\cite{intropaper}}
@@ -78,10 +78,14 @@ Some of the challenges multithreading will pose can be seen in Figure 1. Figure 
 
 Kerbiriou and Chikhi examined parallel decompression of FASTQ \gzip files to
 speed up genomic algorithms that require FASTQ
-input~\cite{kerbiriou2019parallel}. They do not build an index over the FASTQ
-file by making a pass over it as we attempt to do, but rather attempt to
-reconstruct data from back-references discovered by reading forward from a
-random entry point.
+input~\cite{kerbiriou2019parallel}. Rather than building an index over the FASTQ file and storing the contexts needed for deflate, they decompress the gzip compressed FASTQ file by a two pass algorithm as shown by Figure 2. 
+\begin{figure}[H]
+    \includegraphics[scale=0.5]{figs/twopass.png}
+    \label{fig:multithread}
+    \caption{First pass decompress the file while leaving unresolvable back pointers untouched. The second pass will use context decompressed in the previous stream to resolve back pointers. ~\cite{kerbiriou2019parallel}}
+\end{figure}
+The first pass of the algorithm will divide the gzip compressed FASTQ file into multiple chunks and each thread is responsible for deflating one chunk. Since there's no context, only the thread that deflate the first chunk of the file could deflate successfully since the first chunk since every back pointer in the first chunk has to point to string within the first chunk. Because all other chunks will have back pointers that point to earlier chunk which they have access to, threads handling those chunks will mark those pointers as unresolved and deflate as much of the chunk as it can. Since the distance back pointers can point back across is 32K, the number of unresolved back pointers in each chunk is limited to 32K.
+The second pass of the algorithm will then pass the last 32K bits of the deflated chunks to the threads handling later chunks so that they can resolve the unresolved back pointers. 
 
 \texttt{zlib}~\cite{zlib} is a C library written by Mark Adler and others that
 is able to create and read \gzip files. This library will be important for our
@@ -95,6 +99,8 @@ overall goal and will be a useful source of information and point of comparison.
 create an index over compressed NIFTI image files, which use \gzip compression by
 default. This will be another useful point of comparison in a tool that needs to
 accomplish a similar task as us.
+
+\texttt{libdeflate}~\cite{libdeflate} is a state-of-art highly optimized single-threaded open-source library used to compress and decompress files in DEFLATE/gzip/zlib format. This will serve as a great benchmark for our program.
 
 \begin{table*}[ht]
     \centering
