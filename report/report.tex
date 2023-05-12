@@ -121,7 +121,9 @@ SRR925816 (XL) & Homo sapiens & 71,504,007 & 5,046
 \end{table*}
 
 \section{Methodology}
-
+We implemented our solution in C in order to take advantage of the library
+\zlib~\cite{zlib}. \zlib is a C library written and maintained by Jean-loup
+Gailly and Mark Adler since 1995.
 The software tools we developed for our project consist of an \emph{index
 building} component, which creates the sequence-aware \gzip index, and an
 \emph{index reading} component, which we use to validate the utility of the
@@ -152,12 +154,13 @@ We built our \ibuilder tool around the idea of access point in \zran. By the pur
 
 This, however, creates a new set of problems. The start of each DEFLATE block contains information needed to decompress the block. If the index is not on block boundary, deflate algorithm will fail to execute unless we store the Huffman code tree at the start of each block alongside the index. We decided against this approach and chose to store the index of start of the corresponding block for each index and how many uncompressed bytes we need to skip instead. 
 
-The reason for this is simple. If the index is at the middle of a block, we have to tell deflate algorithm how many bits in the byte index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{libdeflate} will not provide. That means we have to write our own deflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the deflate algorithm. 
+The reason for this is simple. If the index is at the middle of a block, we have to tell deflate algorithm how many bits in the byte the index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{zlib} will not provide. That means we have to write our own deflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the deflate algorithm. 
 
 The downside of this approach is quite limited considering two facts at hand. First, we won't create an index until both the block and the read at the end of the block end, which means in the worst case scenario, we only have one-read-length amount of bytes of overhead per index. Second, each read is short in FASTQ. If we can control the number of index points, we can make the overhead of our approach negligible.  
 \label{sec:ibuilder}
 
 \subsection{3.3 \ireader}
+Like \zran, our \ireader will skip to the desired DEFLATE block while maintaining the necessary context for deflate algorithm. After it fetches the block and creates the context, it'll read all the bytes from this index up to the next index, decompress them, and return the result to user.
 \label{sec:ireader}
 
 \subsection{Data Sources}
@@ -170,16 +173,10 @@ translates into a wide range of \gzip file sizes for our tool to contend with.
 Indeed, the largest FASTQ \gzip file we consider is approximately 25 times as
 large as the shortest.
 
-\subsection{Index Creation Tool \& Methodology}
-
-We implemented our solution in C in order to take advantage of the library
-\zlib~\cite{zlib}. \zlib is a C library written and maintained by Jean-loup
-Gailly and Mark Adler since 1995. 
-
 \subsection{Parallel Reading}
 
 
-\begin{figure}
+\begin{figure}[h]
     \includegraphics[width=\linewidth]{figs/cores.pdf}
     \label{fig:cores}
     \caption{Time to read differently-sized FASTQ \gzip files using a pre-built
