@@ -76,31 +76,42 @@ Some of the challenges multithreading will pose can be seen in Figure 1. Figure 
 
 \section{Related Work}
 
-Kerbiriou and Chikhi examined parallel decompression of FASTQ \gzip files to
-speed up genomic algorithms that require FASTQ
-input~\cite{kerbiriou2019parallel}. Rather than building an index over the FASTQ file and storing the contexts needed for deflate, they decompress the gzip compressed FASTQ file by a two pass algorithm as shown by Figure 2. 
-\begin{figure}[H]
-    \includegraphics[scale=0.5]{figs/twopass.png}
-    \label{fig:multithread}
-    \caption{First pass decompress the file while leaving unresolvable back pointers untouched. The second pass will use context decompressed in the previous stream to resolve back pointers. ~\cite{kerbiriou2019parallel}}
-\end{figure}
-The first pass of the algorithm will divide the gzip compressed FASTQ file into multiple chunks and each thread is responsible for deflating one chunk. Since there's no context, only the thread that deflate the first chunk of the file could deflate successfully since the first chunk since every back pointer in the first chunk has to point to string within the first chunk. Because all other chunks will have back pointers that point to earlier chunk which they have access to, threads handling those chunks will mark those pointers as unresolved and deflate as much of the chunk as it can. Since the distance back pointers can point back across is 32K, the number of unresolved back pointers in each chunk is limited to 32K.
-The second pass of the algorithm will then pass the last 32K bits of the deflated chunks to the threads handling later chunks so that they can resolve the unresolved back pointers. 
+Building an index over a \gzip file has been a focus of several recent projects,
+many of which take advantage of \texttt{zlib}~\cite{zlib}, a C libray originally
+authored by Jean-loup Gailly and Mark Adler for the purpose of creating and reading
+\gzip files. The canonical example of building an index for random access into a \gzip 
+file is zran.c, an extension of \texttt{zlib} written by Mark Adler. zran.c decompresses 
+the \gzip file block by block, and at each block boundary, it will create an index access 
+point if it has consumed a user-configurable number of bytes in the uncompressed data. 
+Each access point stores the block offset in both the compressed and uncompressed data, 
+as well as a 32 KB window of uncompressed data immediately preceding the block needed 
+to resolve back references during decompression. Then, given an offset in the uncompressed 
+file, zran.c will find the closest access point that occurs at or before the offset, 
+initialize the decoder state with the 32 KB window, decompress and discard data until
+reaching the offset, then continue to decompress a desired number of bytes before returning
+the result to the user.
 
-\texttt{zlib}~\cite{zlib} is a C library written by Mark Adler and others that
-is able to create and read \gzip files. This library will be important for our
-project as it exposes the underlying mechanics for inflating \gzip files.
+At least two subsequent projects directly utilize zran.c for building an index over 
+compressed files for which \gzip is the most common compression standard.
+\texttt{indexed\_gzip}~\cite{indexedgzip} is a project by Paul McCarthy designed
+to create an index over compressed NIFTI image files. Because zran.c can build an
+index over any \gzip file independent of the format of the uncompressed data, the
+Python C extension \texttt{pyfastx}~\cite{pyfastx} uses \texttt{indexed\_gzip} to
+enable random reads from compressed FASTA and FASTQ files.
 
-\texttt{pyfastx}~\cite{pyfastx} is a Python C extension that enables random
-reads from FASTA and FASTQ. The functionality that it exposes is similar to our
-overall goal and will be a useful source of information and point of comparison.
+Kerbiriou and Chikhi take a different approach to decompressing FASTQ \gzip files
+at arbitrary locations, doing so in parallel and without an index~\cite{kerbiriou2019parallel}.
+Their decompression algorithm takes two passes over the FASTQ \gzip file. The first
+pass divides the \gzip file into chunks, each of which will be decompressed by a single
+thread. Without the 32 KB context preceding each block, only the thread handling 
+decompression of the first chunk will be able to completely resolve back references;
+every back reference points somewhere within the first chunk. Because all other chunks
+will have back pointers referring to previous chunks, the threads handling those chunks
+will mark the pointers as unresolved and inflate as much of the chunk as possible. The 
+second pass provides the last 32 KB of the inflated chunks to threads decompressing 
+later chunks so that they can resolve remaining back pointers.
 
-\texttt{indexed\_gzip}~\cite{indexedgzip} is a project by Paul McCarthy to
-create an index over compressed NIFTI image files, which use \gzip compression by
-default. This will be another useful point of comparison in a tool that needs to
-accomplish a similar task as us.
-
-\texttt{libdeflate}~\cite{libdeflate} is a state-of-art highly optimized single-threaded open-source library used to compress and decompress files in DEFLATE/gzip/zlib format. This will serve as a great benchmark for our program.
+% \texttt{libdeflate}~\cite{libdeflate} is a state-of-art highly optimized single-threaded open-source library used to compress and decompress files in DEFLATE/gzip/zlib format. This will serve as a great benchmark for our program.
 
 \begin{table*}[ht]
     \centering
