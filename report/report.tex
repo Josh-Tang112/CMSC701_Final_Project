@@ -129,11 +129,11 @@ index building component by using the indices to read a compressed gzip file in
 parallel and write it out to a file, which we then compare against the
 uncompressed original FASTQ to verify our program's correctness. We first detail
 the thought process and inspriation behind our approach in
-Section~\ref{sec:zran}, document the design of our index builder in
-Section~\ref{sec:ibuilder}, and discuss the design of the index reader and validation
-tool in Section~\ref{sec:ireader}.
+Subsection~\ref{sec:zran}, document the design of our index builder in
+Subsection~\ref{sec:ibuilder}, and discuss the design of the index reader and validation
+tool in Subsection~\ref{sec:ireader}.
 
-\subsection{\zran}
+\subsection{3.1 \zran}
 \label{sec:zran}
 
 The starting point for our index creation utility is a tool called
@@ -141,17 +141,23 @@ The starting point for our index creation utility is a tool called
 is a single-file demonstration of how to build an index over a \gzip file
 written by Mark Adler, co-creator and maintainer of \zlib. It is included with
 \zlib. \zran is designed to allow for random access within a \gzip file. \zran
-accomplishes this in two steps. First, we describe the low-level internals of
-how \zlib accomplishes compression and decompression, then we describe each of
-the steps in \zran.
+accomplishes this in two steps. 
 
-First, \zran completes a full read through the \gzip file. At each \gzip block
-boundary (which which is anno)
+First, \zran completes a full read through the \gzip file. At each \gzip block boundary, which is defined as a literal with value 256 in DEFLATE, \zran will add an access point if \zran has consumed more than SPAN number of bytes, specified by the user, and such block is not the last block. 
 
-\subsection{\ibuilder}
+Then, given an offset to the uncompressed file, \zran will find an access point right before the offset and skip to the DEFLATE block that offset is in while deflating the skipped block to maintain the context needed for deflate. After the block offset is in is fetched and context for it is built, \zran will read in desired number of uncompressed bytes, decompressed them, and return the result to the user. 
+
+\subsection{3.2 \ibuilder}
+We built our \ibuilder tool around the idea of access point in \zran. By the purpose of this program, each index cannot end in the middle of a read because that will defeat the purpose of making this program part of the pipeline of other multithreading or multiprocessing genomics tools. But, because \zran was not designed for FASTQ file or genomics files in general, we have to modified \zran to add more information to our index. Therefore, we need to restrict the program to only create index when both the block and the read end. 
+
+This, however, creates a new set of problems. The start of each DEFLATE block contains information needed to decompress the block. If the index is not on block boundary, deflate algorithm will fail to execute unless we store the Huffman code tree at the start of each block alongside the index. We decided against this approach and chose to store the index of start of the corresponding block for each index and how many uncompressed bytes we need to skip instead. 
+
+The reason for this is simple. If the index is at the middle of a block, we have to tell deflate algorithm how many bits in the byte index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{libdeflate} will not provide. That means we have to write our own deflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the deflate algorithm. 
+
+The downside of this approach is quite limited considering two facts at hand. First, we won't create an index until both the block and the read at the end of the block end, which means in the worst case scenario, we only have one-read-length amount of bytes of overhead per index. Second, each read is short in FASTQ. If we can control the number of index points, we can make the overhead of our approach negligible.  
 \label{sec:ibuilder}
 
-\subsection{\ireader}
+\subsection{3.3 \ireader}
 \label{sec:ireader}
 
 \subsection{Data Sources}
