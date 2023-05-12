@@ -3,6 +3,9 @@
 \usepackage{xspace}
 \usepackage{graphicx}
 \newcommand{\zlib}{\texttt{zlib}\xspace}
+\newcommand{\zran}{\texttt{zran}\xspace}
+\newcommand{\ibuilder}{\texttt{index\_builder}\xspace}
+\newcommand{\ireader}{\texttt{index\_reader}\xspace}
 \newcommand{\gzip}{gzip\xspace}
 
 \begin{document}
@@ -101,6 +104,38 @@ SRR925816 (XL) & Homo sapiens & 71,504,007 & 5,046
 \end{table*}
 
 \section{Methodology}
+
+The software tools we developed for our project consist of an \emph{index
+building} component, which creates the sequence-aware \gzip index, and an
+\emph{index reading} component, which we use to validate the utility of the
+index building component by using the indices to read a compressed gzip file in
+parallel and write it out to a file, which we then compare against the
+uncompressed original FASTQ to verify our program's correctness. We first detail
+the thought process and inspriation behind our approach in
+Section~\ref{sec:zran}, document the design of our index builder in
+Section~\ref{sec:ibuilder}, and discuss the design of the index reader and validation
+tool in Section~\ref{sec:ireader}.
+
+\subsection{\zran}
+\label{sec:zran}
+
+The starting point for our index creation utility is a tool called
+\zran~\cite{zran}. \zran
+is a single-file demonstration of how to build an index over a \gzip file
+written by Mark Adler, co-creator and maintainer of \zlib. It is included with
+\zlib. \zran is designed to allow for random access within a \gzip file. \zran
+accomplishes this in two steps. First, we describe the low-level internals of
+how \zlib accomplishes compression and decompression, then we describe each of
+the steps in \zran.
+
+First, \zran completes a full read through the \gzip file. At each \gzip block
+boundary (which which is anno)
+
+\subsection{\ibuilder}
+\label{sec:ibuilder}
+
+\subsection{\ireader}
+\label{sec:ireader}
 
 \subsection{Data Sources}
 
