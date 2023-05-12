@@ -17,7 +17,7 @@
 %% Template article for OXFORD UNIVERSITY PRESS's document class `oup-authoring-template'
 %% with bibliographic references
 %%
-%% Version 1.1, updated to reflect changes to OUP’s official page designs, 2022.
+%% Version 1.1, updated to reflect changes to OUPÂ’s official page designs, 2022.
 
 \newcommand\classname{oup-authoring-template}
 \newcommand\lastmodifieddate{2022/03/18}
