@@ -2,6 +2,7 @@
 \usepackage{hyperref}
 \usepackage{xspace}
 \usepackage{graphicx}
+\usepackage{subfigure}
 \newcommand{\zlib}{\texttt{zlib}\xspace}
 \newcommand{\zran}{\texttt{zran}\xspace}
 \newcommand{\ibuilder}{\texttt{index\_builder}\xspace}
@@ -240,12 +241,15 @@ Indeed, the largest FASTQ \gzip file we consider is approximately 25 times as
 large as the shortest.
 
 \section{Results}
+\label{sec:results}
 
 In this section we discuss the results of using our \ibuilder to create index
 files over variously-sized \gzip FASTQ files, and then turn to the results of
 running \ireader on those index files.
 
 \subsection{Building Indices}
+\label{sec:buildresults}
+
 
 Using the \gzip FASTQ samples we described in Table~\ref{tab:source}, we run
 \ibuilder over each. For each sample, we record the time it takes to build the
@@ -258,6 +262,7 @@ writes separate files that contain \gzip DEFLATE block boundary information and
 
 
 \subsection{Parallel Reading}
+\label{sec:readresults}
 
 \begin{figure}[h]
     \includegraphics[width=\linewidth]{figs/cores.pdf}
