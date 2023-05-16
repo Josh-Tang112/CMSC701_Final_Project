@@ -43,12 +43,12 @@ that contains the start of a sequence read chunk.
 
 This, however, creates a new set of problems. The start of each DEFLATE block
 contains information needed to decompress the block. If the index is not on
-block boundary, deflate algorithm will fail to execute unless we store the
+block boundary, inflate algorithm will fail to execute unless we store the
 Huffman code tree at the start of each block alongside the index. We decided
 against this approach and chose to store the index of start of the corresponding
 block for each index and how many uncompressed bytes we need to skip instead. 
 
-The reason for this is simple. If the index is at the middle of a block, we have to tell deflate algorithm how many bits in the byte the index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{zlib} will not provide. That means we have to write our own deflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the deflate algorithm. 
+The reason for this is simple. If the index is at the middle of a block, we have to tell inflate algorithm how many bits in the byte the index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{zlib} will not provide. That means we have to write our own inflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the inflate algorithm. 
 
 The downside of this approach is quite limited considering two facts at hand.
 First, we won't create an index until both the block and the read at the end of
@@ -94,7 +94,7 @@ start of the block and the start of the chunk, which must be discarded.
 \label{sec:ireader}
 
 Like \zran, our \ireader will skip to the desired DEFLATE block while
-maintaining the necessary context for deflate algorithm. After it fetches the
+maintaining the necessary context for inflate algorithm. After it fetches the
 block and creates the context, it will read all the bytes from this index up to
 the next index, decompress them, and return the result to user. In our initial
 prototype, we have \ireader write the decompressed FASTQ file to disk. While
