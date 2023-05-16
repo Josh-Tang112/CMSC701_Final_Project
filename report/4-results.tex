@@ -92,14 +92,11 @@ sequence reads per index point increases from 10,000 to 1,000,000, the size of
 the index file relative to the original \gzip drops from more than 5\% in the
 case of the M, L, and XL source files, to around 0.05\%.
 
-
-
 \subsection{Parallel Reading}
 \label{sec:readresults}
 
 \begin{figure}[h]
-    \includegraphics[width=\linewidth]{figs/cores.pdf}
-    \label{fig:cores}
+    \includegraphics[width=\linewidth]{figs/threads.pdf}
     \caption{Time to read differently-sized FASTQ \gzip files using a pre-built
     index file and different numbers of threads. Time compasses total program
     execution, including reading the index files, parallel reading the \gzip
@@ -107,8 +104,42 @@ case of the M, L, and XL source files, to around 0.05\%.
     \texttt{zcat} to read the file and write it to disk is shown for comparison
     using a dotted line (\texttt{zcat} execution is single threaded). See
     Table~\ref{tab:source} for descriptions of small, medium, large, and XL.}
+    \label{fig:threads}
 \end{figure}
 
-Using the index files we generated for each 
+Using the index files we generated for each of the data sources we considered,
+we read each of the files in parallel using a variable number of threads. We
+used POSIX threading library \texttt{libpthread} to implement our parallel,
+multithreaded reading approach.
 
+For each file, we used \ireader and varied the thread parameter \texttt{-n
+N\_THREADS} between 1 and 16 to test the runtime of the parallel reader. After
+each iteration, we used GNU \texttt{diff} to ensure that the resulting file
+produced by our parallel reader was the same as the original, uncompressed FASTQ
+file (that is, that \ireader introduced no errors.) In all instances, our
+parallel reader produced the correct, uncompressed output file.
 
+We compared our \ireader implementation's execution time with a varying number
+of threads against \texttt{zcat}. \texttt{zcat} is another \zlib utility that
+decompresses a \gzip file and writes the result to standard out. Importantly,
+\texttt{zcat} is a single-threaded application. In our data, we compare the
+amount of time it takes \texttt{zcat} to inflate a file, which we write to
+standard out to provide the best comparison against our \ireader utility.
+
+Figure~\ref{fig:threads} displays the total \ireader runtime using a varying
+number of threads for each file size using solid lines. The dotted lines
+represent the amount of time it took to use the \texttt{zcat} tool to read the
+file in serial and redirect its output to a file.
+
+Our \ireader implementation using only a single thread (non-parallel) underperformed
+\texttt{zcat} at each file size by approximately 10-20\% for the three larger
+file sizes. This is likely due to our implementation continuing to count lines
+and sequences within the \gzip file it is inflating, despite there being no need
+to do so with only a single thread -- it is reading the entire file. When the
+number of threads increases so that there are parallel readers ($>$1 threads),
+we outperform our \texttt{zcat} baseline at every file size and number of
+threads. At only two threads, our parallel reader takes 69\% of the
+\texttt{zcat} time (61.2 seconds vs 87.65 seconds) for the XL data source, and
+only 30\% of the \texttt{zcat} time at 16 threads. A clear knee between $2 \leq
+N \leq 4$ threads is observed; adding more than four threads exhibits clear
+diminishing returns. 
