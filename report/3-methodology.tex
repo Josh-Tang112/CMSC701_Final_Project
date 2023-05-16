@@ -19,7 +19,7 @@ tool in Subsection~\ref{sec:ireader}.
 The starting point for our index creation utility is a tool called
 \zran~\cite{zran}. \zran
 is a single-file demonstration of how to build an index over a \gzip file
-written by Mark Adler, co-creator and maintainer of \zlib. It is included with
+written by Mark Adler, the co-creator and maintainer of \zlib. It is included with
 \zlib. \zran is designed to allow for random access within a \gzip file. \zran
 accomplishes this in two steps. 
 
@@ -29,15 +29,16 @@ Then, given an offset to the uncompressed file, \zran will find an access point 
 
 \subsection{\ibuilder}
 \label{sec:ibuilder}
-We built our \ibuilder tool around the idea of access point in \zran. By the
-purpose of this program, each index cannot end in the middle of a read because
+We built our \ibuilder tool around the idea of access point indices from \zran.
+To accomplish our project's purpose, however,
+these indices cannot end in the middle of a read because
 that will defeat the purpose of making this program part of the pipeline of
-other multithreading or multiprocessing genomics tools. But, because \zran was
+other multithreading or multiprocessing genomics tools. Because \zran was
 not designed for FASTQ file or genomics files in general, we have to modify
 \zran to add more information to our index. Specifically, we wish to create
 indices only for \gzip blocks that contain the start of a sequence chunk of
 reads (\eg 10,000), a number that can be specified by the user. Therefore, we
-need to restrict the program to only create an index at the start of a block
+need to restrict the program to only create indices at the start of blocks
 that contains the start of a sequence read chunk.
 
 This, however, creates a new set of problems. The start of each DEFLATE block
@@ -63,10 +64,10 @@ points that it maintains while reading the \gzip FASTQ file. Unlike \zran, we
 also parse the decoded byte buffer to count the line numbers within the FASTQ
 file as we decompress it. We do this because the FASTQ format specifies that
 every fourth line is the start of a new sequence. Therefore, by maintaining
-state on what line number we are on as we inflate the compressed file, we can
-track which sequence are on by incrementing a counter every fourth line. 
+state on what line number we are decoding as we inflate the compressed file, we can
+track which sequence we are on by incrementing a counter every fourth line. 
 
-\ibuilder in addition to the required \gzip file parameter, \ibuilder accepts an
+In addition to the required \gzip file parameter, \ibuilder accepts an
 optional \texttt{-c CHUNKSIZE} parameter that allows the user to specify the
 number of sequence reads in a ``chunk.'' When the \ibuilder has read
 \texttt{CHUNKSIZE} sequences (by default 10,000), it denotes which DEFLATE block
@@ -75,7 +76,9 @@ block the sequence chunk begins at. It adds this information to another linked
 list in order to output this information when the program completes. In this
 manner, \ibuilder creates an index over the \gzip FASTQ file, annotating both
 the start of \gzip DEFLATE blocks and the start of sequence chunks within those
-blocks. When the program has finished reading the file, it outputs two index
+blocks. 
+
+When the \ibuilder program has finished reading the file, it outputs two index
 files -- \texttt{output.idx} and \texttt{output.seq-idx}. The former contains
 information allowing a reader to begin decompression at the beginning of a
 DEFLATE block -- the number of bytes the block starts from the beginning of the
@@ -89,10 +92,25 @@ start of the block and the start of the chunk, which must be discarded.
 
 \subsection{\ireader}
 \label{sec:ireader}
+
 Like \zran, our \ireader will skip to the desired DEFLATE block while
 maintaining the necessary context for deflate algorithm. After it fetches the
 block and creates the context, it will read all the bytes from this index up to
-the next index, decompress them, and return the result to user.
+the next index, decompress them, and return the result to user. In our initial
+prototype, we have \ireader write the decompressed FASTQ file to disk. While
+this task is not specifically related to genomics, it allows us to make easy
+benchmarking comparisons to single-threaded tools that accomplish the same task,
+such as \texttt{zcat}, which simply decompresses a \gzip file. It also allows
+us to easily compare our parallel, FASTQ-aware \ireader implementation's output
+with the decompressed FASTQ file to validate the correctness of our
+implementation.
+
+\ireader has three mandatory arguments and one optional argument. A user must
+provide the \texttt{.idx} and \texttt{.seq-idx} files produced by \ibuilder, as
+well as the \gzip file that they were built over. The user may also specify the
+number of threads they wish to use to read the file in parallel; the number of
+threads is set to 4 by default. The allowed thread number is bounded between 1
+and 16.
 
 \begin{table*}[ht]
     \centering
@@ -102,7 +120,8 @@ the next index, decompress them, and return the result to user.
 \begin{tabular}{r|l|r|r}
 \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}Sequence Read\\
 Identifier\end{tabular}}} & \multicolumn{1}{c}{\textbf{Source}} &
-    \multicolumn{1}{c}{\textbf{Sequence Reads}} & \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}FASTQ GZ \\ Size (MB)\end{tabular}}} \\
+    \multicolumn{1}{c}{\textbf{Sequence Reads}} &
+    \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}FASTQ GZ \\ Size (MB)\end{tabular}}} \\
 \hline\\
 SRR3295681 (Small)& Salmonella enterica & 959,879 & 205\\
 SRR2121685 (Medium) & Mus musculus & 27,928,438 & 2,078\\
