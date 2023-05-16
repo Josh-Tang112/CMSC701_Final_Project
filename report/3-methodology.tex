@@ -7,48 +7,86 @@ building} component, which creates the sequence-aware \gzip index, and an
 \emph{index reading} component, which we use to validate the utility of the
 index building component by using the indices to read a compressed gzip file in
 parallel and write it out to a file, which we then compare against the
-uncompressed original FASTQ to verify our program's correctness. We first detail
-the thought process and inspriation behind our approach in
-Subsection~\ref{sec:zran}, document the design of our index builder in
-Subsection~\ref{sec:ibuilder}, and discuss the design of the index reader and validation
-tool in Subsection~\ref{sec:ireader}.
+uncompressed original FASTQ to verify our program's correctness. We explored two 
+approaches to building the index. Subsection~\ref{sec:sync} documents the design of 
+an index builder and parallel parser predicated on the idea of inserting sync points
+into a \gzip file. However, given the severe limitations of this approach, we discuss
+the design of an index builder and reader based on modifications to \zran in
+Subsection~\ref{sec:ibuilder} and Subsection~\ref{sec:ireader}, respectively.
 
-\subsection{\zran}
-\label{sec:zran}
+\subsection{Sync Point Index}
+\label{sec:sync}
 
-The starting point for our index creation utility is a tool called
-\zran~\cite{zran}. \zran
-is a single-file demonstration of how to build an index over a \gzip file
-written by Mark Adler, the co-creator and maintainer of \zlib. It is included with
-\zlib. \zran is designed to allow for random access within a \gzip file. \zran
-accomplishes this in two steps. 
+We first explored a simple index implementation in an attempt to avoid the complications and 
+limitations of \zran. In particular, we sought to address two main issues. First, recall that 
+the decoder must have access to the 32 KB window of data immediately preceding a \gzip block 
+in order to resolve back references. Storing at least 32 KB per \gzip block can be expensive, 
+and these windows will dominate the size of the index. Second, recall that decompression can 
+only start from block boundaries. This is undesirable for a parallel FASTQ parser for multiple 
+reasons: we will have limited control over the frequency of points where we can randomly access 
+the \gzip file, and it will be difficult to deal with reads that span multiple \gzip blocks.
 
-First, \zran completes a full read through the \gzip file. At each \gzip block boundary, which is defined as a literal with value 256 in DEFLATE, \zran will add an access point if \zran has consumed more than SPAN number of bytes, specified by the user, and such block is not the last block. 
+We therefore took advantage of the Z\_FULL\_FLUSH option of \zlib. When compressing data with
+Z\_FULL\_FLUSH, \zlib forces the completion of a \gzip block, performing byte-alignment, adding
+a four-byte marker sequence to act as a sync point, and resetting the compression state so that
+no back references in the subsequent block can point before the sync point and decompression can 
+start from the sync point without the 32 KB window. Building an index over a \gzip file with sync
+points would allow us to eliminate the need to store 32 KB per block, and it would allow us to
+start decompression from arbitrary sunc points in the file as opposed to block boundaries. 
+Unfortunately, most \gzip files are not created using the Z\_FULL\_FLUSH option because it degrades
+compression. In order to build an index over any given \gzip file, we must first decompress it and
+recompress it to add sync points at desired locations. 
 
-Then, given an offset to the uncompressed file, \zran will find an access point right before the offset and skip to the DEFLATE block that offset is in while deflating the skipped block to maintain the context needed for deflate. After the block offset is in is fetched and context for it is built, \zran will read in desired number of uncompressed bytes, decompressed them, and return the result to the user. 
+We implemented a C program to insert a sync point after recompressing a user-configurable number of 
+reads (collectively known as a ``chunk'') and simultaneously build an index over the new file. Each 
+index entry stores a triplet of integers representing the byte offset in the compressed stream where 
+the sync point appears, the last read before the sync point, and the total number of bytes in the 
+uncompressed stream that have been compressed up until this point. Technically, only the offsets of 
+each sync point are strictly necessary for parsing entire chunks of reads in parallel. However, storing 
+the last read in each chunk allows us to have the flexibility of retrieving specific ranges of reads within 
+the \gzip file rather than entire chunks, and knowing the total number of bytes in the uncompressed stream 
+that have been compressed up until a sync point simplifies memory allocation. Even with storing these two
+extra integers, we can store the information for over 1,000 sync points in the same amount of space as the
+32 KB windows. 
+
+We implemented a second C program capable of reading chunks of a \gzip FASTQ file in parallel (using a
+configurable number of threads) given the index over the file, a starting chunk, and a number of chunks 
+to read. Each thread is responsible for an equal-sized subset of the range of chunks. A thread will
+seek directly to the byte offset of the sync point corresponding to the first chunk in the range, 
+decompresses the entire range of chunks, and return the result.
+
+We note however that this approach to building indices has severe limitations, which in turn
+limited our ability to effectively test it. First, the time to build the index is tied to the
+time needed to recompress a \gzip file, which is slow due to the size of the uncompressed data
+and the use of file I/O. Furthermore, we require extra disk space that is at least twice the
+size of the original \gzip file in order to create a copy with sync points. Because sync points
+add additional bytes due to byte alignment and byte markers, the new \gzip is likely to be
+somewhat larger than the original. With sufficiently frequent sync points, the increase in file
+size may offset the space saved by not storing 32 KB windows of data in the index.
 
 \subsection{\ibuilder}
 \label{sec:ibuilder}
-We built our \ibuilder tool around the idea of access point indices from \zran.
-To accomplish our project's purpose, however,
-these indices cannot end in the middle of a read because
-that will defeat the purpose of making this program part of the pipeline of
-other multithreading or multiprocessing genomics tools. Because \zran was
-not designed for FASTQ file or genomics files in general, we have to modify
-\zran to add more information to our index. Specifically, we wish to create
-indices only for \gzip blocks that contain the start of a sequence chunk of
-reads (\eg 10,000), a number that can be specified by the user. Therefore, we
-need to restrict the program to only create indices at the start of blocks
-that contains the start of a sequence read chunk.
+Given the limitations of our sync point index approach, we built our alternative \ibuilder 
+tool around the idea of access point indices from \zran. Because \zran was not designed for 
+FASTQ files or genomics files in general, we have to modify \zran to add more information to 
+our index. Specifically, we wish to create indices only for \gzip blocks that contain the 
+start of a chunk of reads (\eg 10,000), a number that can be specified by the user. 
+Therefore, we need to restrict the program to only create indices at the start of 
+blocks that contains the start of a sequence read chunk.
 
-This, however, creates a new set of problems. The start of each DEFLATE block
+This, however, creates a new set of problems. The start of each \gzip block
 contains information needed to decompress the block. If the index is not on
-block boundary, inflate algorithm will fail to execute unless we store the
+block boundary, the inflate algorithm will fail to execute unless we store the
 Huffman code tree at the start of each block alongside the index. We decided
-against this approach and chose to store the index of start of the corresponding
+against this approach and instead chose to store the index of start of the corresponding
 block for each index and how many uncompressed bytes we need to skip instead. 
 
-The reason for this is simple. If the index is at the middle of a block, we have to tell inflate algorithm how many bits in the byte the index points it should skip. In other words, we need to know the valid starting point in the byte which standard \zlib~\cite{zlib} will not provide. That means we have to write our own inflate algorithm, which is impossible due to time constraints and limitation of our knowledge about implementation of the inflate algorithm. 
+The reason for this is simple. If the index is at the middle of a block, we 
+have to tell the inflate algorithm how many bits in the byte that the index points 
+to it should skip. In other words, we need to know the valid starting point in the 
+byte which standard \zlib~\cite{zlib} will not provide. That means we would have to 
+write our own inflate algorithm, which is impossible due to time constraints and 
+our limited knowledge about the implementation of the inflate algorithm. 
 
 The downside of this approach is quite limited considering two facts at hand.
 First, we won't create an index until both the block and the read at the end of
