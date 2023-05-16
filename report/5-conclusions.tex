@@ -1,5 +1,30 @@
 \section{Conclusion and Future Work}
 
-Our work is located here:
-\url{https://github.com/Josh-Tang112/CMSC701_Final_Project}
+In this work, we examined the problem of developing a FASTQ-aware \gzip index
+creation utility and parallel reader that leverages those pre-built indexes to
+speed up \gzip FASTQ I/O bottlenecks. 
 
+Toward that goal, we developed index building (\ibuilder) and index reading
+(\ireader) utilities. Both our \ibuilder and \ireader utilities expand upon a
+proof-of-concept for developing a \gzip index called \zran. Our \ibuilder
+creates sequence read-aware indexes over the \gzip FASTQ file for a
+user-configurable number of sequences in each ``chunk.'' We showed in
+\S\ref{sec:ibuilder} that by smartly choosing the size of these sequence chunks
+for index creation, the resulting index files sizes can be fractions of 1\% of
+the size of the original \gzip FASTQ file. Using the \ireader utility we
+developed, we take these index files and divvy the work of reading the chunks of
+sequences up between a user-configurable number of threads. We show that our
+implementation outperforms a serial, non-sequence-aware baseline in reading the
+FASTQ file into memory. 
+
+\subsection{Future Work}
+
+Our demonstration of the power of our multi-threaded \gzip reader approach
+has shown promise on the simple, proof-of-concept task of reading a \gzip file
+into memory and writing it back to disk. A more robust challenge our \ireader
+could be easily adapted to solving would be to perform simple statistical
+measures on the sequence read bases, \eg counting ``A'', ``C'', ``G'', and
+``T''s within a file.
+
+Our code is located here:
+\url{https://github.com/Josh-Tang112/CMSC701_Final_Project}
