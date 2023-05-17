@@ -1,6 +1,23 @@
 \section{Results}
 \label{sec:results}
 
+\begin{table*}[ht]
+    \centering
+    \caption{Creation time, new file size, and index size using the sync point
+    strategy.}
+\begin{tabular}{l|r|r|r}
+   
+    File & Creation Time (s) & New File Size (B) & Index Size (B)\\
+    \hline
+    Small & 187 & 198,095,562 &  4608\\
+    Medium & 1164 & 2,204,279,194 &  67032\\
+    Large & 1441 &  3,546,205,784 &127848\\
+    XL & 2137 & 5,341,584,427 & 171624\\
+\end{tabular}
+    \label{tab:sync}
+\end{table*}
+
+
 In this section we discuss the results of using our \ibuilder to create index
 files over variously-sized \gzip FASTQ files, and then turn to the results of
 running \ireader on those index files.
@@ -131,7 +148,9 @@ standard out to provide the best comparison against our \ireader utility.
 Figure~\ref{fig:threads} displays the total \ireader runtime using a varying
 number of threads for each file size using solid lines. The dotted lines
 represent the amount of time it took to use the \texttt{zcat} tool to read the
-file in serial and redirect its output to a file.
+file in serial and redirect its output to a file. The dashed lines represent
+parallel \gzip reading using a non-sequence aware implementation called
+\texttt{pugz}.
 
 Our \ireader implementation using only a single thread (non-parallel) underperformed
 \texttt{zcat} at each file size by approximately 10-20\% for the three larger
