@@ -102,7 +102,9 @@ case of the M, L, and XL source files, to around 0.05\%.
     execution, including reading the index files, parallel reading the \gzip
     file with $N$ threads, and writing the reconstituted file to disk. Time for
     \texttt{zcat} to read the file and write it to disk is shown for comparison
-    using a dotted line (\texttt{zcat} execution is single threaded). See
+    using a dotted line (\texttt{zcat} execution is single threaded). Another
+    parallel (but not ``sequence aware'') gzip reader implementation
+    \texttt{pugz} is shown in a dashed line. See
     Table~\ref{tab:source} for descriptions of small, medium, large, and XL.}
     \label{fig:threads}
 \end{figure}
