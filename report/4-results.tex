@@ -20,7 +20,8 @@
 
 In this section we discuss the results of using our \ibuilder to create index
 files over variously-sized \gzip FASTQ files, and then turn to the results of
-running \ireader on those index files.
+running \ireader on those index files. We also give results of the construction
+time of our sync point index.
 
 \subsection{Building Indices}
 \label{sec:buildresults}
@@ -163,4 +164,25 @@ threads. At only two threads, our parallel reader takes 69\% of the
 \texttt{zcat} time (61.2 seconds vs 87.65 seconds) for the XL data source, and
 only 30\% of the \texttt{zcat} time at 16 threads. A clear knee between $2 \leq
 N \leq 4$ threads is observed; adding more than four threads exhibits clear
-diminishing returns. 
+diminishing returns.
+
+\subsection{Sync Point Index}
+
+We also evaluated the performance of our sync point index for the same four data 
+sources across multiple construction-time metrics, namely the time taken to simultaneously 
+recompress the file and build the index, the size of the recompressed file, and the size of 
+the index. The results are shown in Table~\ref{tab:sync}. As expected, we found that index 
+creation time is far longer than that of our \ibuilder tool because we need to read, decompress, 
+recompress, and write the entire file. In terms of the \gzip size after recompression, we found 
+that sync point insertion increases the file size by approximately 5-6\%, regardless of the 
+original \gzip size. While the percentage increase is relatively small, for large \gzip files, 
+the amount of extra bytes can still exceed the space savings provided by the minuscule index 
+sizes. Even for the largest file tested, the resulting index size is less than 200 KB.
+
+Unfortunately, our parallel reader implementation for the sync point index is significantly less 
+efficient than all other implementations tested, taking minutes to parse even the medium file with 
+16 threads. We uncertain as to the exact cause of the inefficiency; however, we note that the primary 
+questions regarding the feasibility of the sync point index were based on its construction as opposed 
+to using it to read chunks in parallel. With a more optimal parallel reader implementation, we may 
+see that the execution time to read \gzip files in parallel competes with those of our \ibuilder tool
+and other existing decompression tools.
