@@ -55,8 +55,8 @@ to read. Each thread is responsible for an equal-sized subset of the range of ch
 seek directly to the byte offset of the sync point corresponding to the first chunk in the range, 
 decompresses the entire range of chunks, and return the result.
 
-We note however that this approach to building indices has severe limitations, which in turn
-limited our ability to effectively test it. First, the time to build the index is tied to the
+We note however that this approach to building indices has severe limitations, which negatively
+impacts its scalability. First, the time to build the index is tied to the
 time needed to recompress a \gzip file, which is slow due to the size of the uncompressed data
 and the use of file I/O. Furthermore, we require extra disk space that is at least twice the
 size of the original \gzip file in order to create a copy with sync points. Because sync points
