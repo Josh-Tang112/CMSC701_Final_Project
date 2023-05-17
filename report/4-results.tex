@@ -181,7 +181,7 @@ sizes. Even for the largest file tested, the resulting index size is less than 2
 
 Unfortunately, our parallel reader implementation for the sync point index is significantly less 
 efficient than all other implementations tested, taking minutes to parse even the medium file with 
-16 threads. We uncertain as to the exact cause of the inefficiency; however, we note that the primary 
+16 threads. We are uncertain as to the exact cause of the inefficiency; however, we note that the primary 
 questions regarding the feasibility of the sync point index were based on its construction as opposed 
 to using it to read chunks in parallel. With a more optimal parallel reader implementation, we may 
 see that the execution time to read \gzip files in parallel competes with those of our \ibuilder tool
