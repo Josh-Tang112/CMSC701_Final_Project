@@ -1,22 +1,6 @@
 \section{Results}
 \label{sec:results}
 
-\begin{table*}[ht]
-    \centering
-    \caption{Creation time, new file size, and index size using the sync point
-    strategy.}
-\begin{tabular}{l|r|r|r}
-   
-    File & Creation Time (s) & New File Size (B) & Index Size (B)\\
-    \hline
-    Small & 187 & 198,095,562 &  4608\\
-    Medium & 1164 & 2,204,279,194 &  67032\\
-    Large & 1441 &  3,546,205,784 &127848\\
-    XL & 2137 & 5,341,584,427 & 171624\\
-\end{tabular}
-    \label{tab:sync}
-\end{table*}
-
 
 In this section we discuss the results of using our \ibuilder to create index
 files over variously-sized \gzip FASTQ files, and then turn to the results of
@@ -166,7 +150,56 @@ only 30\% of the \texttt{zcat} time at 16 threads. A clear knee between $2 \leq
 N \leq 4$ threads is observed; adding more than four threads exhibits clear
 diminishing returns.
 
+\begin{figure}[h]
+    \includegraphics[width=\linewidth]{figs/basecount.pdf}
+    \caption{Time to count nucleotide occurrences using a modified \ireader we
+    call \texttt{base-counter}. We compared to a Bash pipeline using
+    \texttt{zcat}, \texttt{sort}, and \texttt{uniq} to accomplish the same task,
+    but the execution time for the medium file size and larger took in excess of
+    20 minutes. The pipeline execution time for the small file is shown in the
+    blue horizontal line.}
+    \label{fig:basecounts}
+\end{figure}
+
+Finally, in order to demonstrate an application of the \ireader that relies upon
+each thread being aware of where sequences start, we slightly modify our code to
+count nucleotides in a parallel manner. Each thread, rather than returning the
+text data beginning at the start of its sequence chunk until the next chunk
+begins, instead counts the occurrences of each nucleotide on the second line of
+the FASTQ file. Figure~\ref{fig:basecounts} shows the runtime on the 100,000
+sequence chunk index version on each of the data sources. We compare our runtime
+to a \texttt{zcat} pipeline that counts nucleotide occurrences as well
+(\eg \texttt{zcat fastq.gz | paste - - - - | cut -f 2 | grep
+-o . | sort | uniq -c}). We see that our runtimes are slightly higher than the
+comparable runtimes that returned the text data from each thread, rather than a
+nucleotide count. This matches our expectations, as our nucleotide counter must
+both detect whether it is on a nucleotide line (FASTQ line 2) and also check
+which character value it encounters on that line in order to increment the
+counters, which is more computationally intensive than simply filling a buffer.
+We note that the sequence awareness of our implementation makes this an easy
+task for each thread to accomplish, since each thread begins counting at the
+first line of a chunk of sequences. Other parallel \gzip decompressors, like
+\texttt{pugz}, would not have this awareness and would thus be unable to
+determine which line in a FASTQ file they are reading without additional logic.
+
 \subsection{Sync Point Index}
+
+\begin{table*}[ht]
+    \centering
+    \caption{Creation time, new file size, and index size using the sync point
+    strategy.}
+\begin{tabular}{l|r|r|r}
+   
+    File & Creation Time (s) & New File Size (B) & Index Size (B)\\
+    \hline
+    Small & 187 & 198,095,562 &  4608\\
+    Medium & 1164 & 2,204,279,194 &  67032\\
+    Large & 1441 &  3,546,205,784 &127848\\
+    XL & 2137 & 5,341,584,427 & 171624\\
+\end{tabular}
+    \label{tab:sync}
+\end{table*}
+
 
 We also evaluated the performance of our sync point index for the same four data 
 sources across multiple construction-time metrics, namely the time taken to simultaneously 

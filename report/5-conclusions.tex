@@ -17,14 +17,12 @@ sequences up between a user-configurable number of threads. We show that our
 implementation outperforms a serial, non-sequence-aware baseline in reading the
 FASTQ file into memory. 
 
-\subsection{Future Work}
-
-Our demonstration of the power of our multi-threaded \gzip reader approach
-has shown promise on the simple, proof-of-concept task of reading a \gzip file
-into memory and writing it back to disk. A more robust challenge our \ireader
-could be easily adapted to solving would be to perform simple statistical
-measures on the sequence read bases, \eg counting ``A'', ``C'', ``G'', and
-``T''s within a file.
+Finally, we demonstrate our implementation's ability to answer genomics
+questions, such as counting the number of occurrences of nucleotides within a
+\gzip FASTQ file, in a parallel fashion. We show that, for only a slight
+performance degradation from the parallel reader, we can indeed perform this
+task in an order of magnitude faster runtime than a serial implementation using
+\texttt{zcat} and other Unix tools.
 
 Our code is located here:
 \url{https://github.com/Josh-Tang112/CMSC701_Final_Project}

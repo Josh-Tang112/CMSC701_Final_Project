@@ -91,6 +91,15 @@ struct extract_info{
     int nchunks;
 };
 
+/* keeps stats per thread */
+struct stats{
+    off_t A;
+    off_t C;
+    off_t G;
+    off_t T;
+    off_t N;
+};
+
 
 int base64_decode(char* input, size_t input_len, char* output, size_t output_len) {
     int i, j;
@@ -247,7 +256,7 @@ static struct access *add_read_point(struct access *index, int bits,
     return index;
 }
 
-char * extract(char * filename, struct access *index, struct point * this,
+struct stats * extract(char * filename, struct access *index, struct point * this,
         off_t seq_offset, int nchunks)
 {
     int ret, skip, seq_num;
@@ -255,13 +264,12 @@ char * extract(char * filename, struct access *index, struct point * this,
     unsigned char input[CHUNKSIZE];
     unsigned char discard[WINSIZE];
     unsigned char buf[WINSIZE];
-    off_t out_idx = 0;
     off_t line_num = 1;
     off_t totout = seq_num = 0;
     skip = 1;
     off_t buffsize = 2 * WINSIZE;
-    char * output = (char *) malloc(buffsize * sizeof(char));
     FILE *in;
+    struct stats * st = calloc(1, sizeof(struct stats));
 
     /* initialize file and inflate state to start there */
     strm.zalloc = Z_NULL;
@@ -325,8 +333,6 @@ char * extract(char * filename, struct access *index, struct point * this,
             if (totout) {
                 for (int i = 0; i < strm.avail_out; i++) {
                     //Copy the character into the output buffer
-                    output[out_idx] = strm.next_out[i];
-                    out_idx++; //Move index to next pos
 
                     //Check if it's a new line
                     if (strm.next_out[i] == '\n') {
@@ -341,18 +347,24 @@ char * extract(char * filename, struct access *index, struct point * this,
                             }
                         }
                     line_num++;
+                    } else if (line_num % 4 == 2) { //the sequence 
+                        if (strm.next_out[i] == 'A')
+                            st->A++;
+                        else if (strm.next_out[i] == 'C')
+                            st->C++;
+                        else if (strm.next_out[i] == 'G')
+                            st->G++;
+                        else if (strm.next_out[i] == 'T')
+                            st->T++;
+                        else if (strm.next_out[i] == 'N')
+                            st->N++;
+                        else{
+                            printf("Fatal. Encountered unknown nucleotide: %c\n", strm.next_out[i]);
+                            exit(1);
+                        }
+
                     }
 
-                   //Check if we need to double the output buffer size
-                   if (out_idx == buffsize-1) {
-                       buffsize *= 2;
-                       output = (char*) realloc(output, buffsize * sizeof(char));
-                       output[buffsize] = '\0';
-                       if (NULL == output) {
-                           logger(LOG_ERROR, "Got NULL returned from realloc, failing");
-                           exit(1);
-                       }
-                   }
                 }
             }
         }
@@ -446,9 +458,6 @@ char * extract(char * filename, struct access *index, struct point * this,
             //skip = 0;                       /* only do this once */
             if (totout) {
                 for (int i = 0; i < WINSIZE - strm.avail_out; i++) {
-                    output[out_idx] = strm.next_out[i];
-                    out_idx++; //Move index to next pos
-
                     //Check if it's a new line
                     if (strm.next_out[i] == '\n') {
                         // This is a new sequence
@@ -457,26 +466,26 @@ char * extract(char * filename, struct access *index, struct point * this,
                             /* If we've seen the total number of sequences we need to,
                              * return the buffer we've been building */
                             if ((nchunks > 0) && (seq_num % nchunks) == 0) {
-/*
-                                output[out_idx] = '\0';
-                                return output;
-*/
                                 goto deflate_index_extract_ret;
-                                /* This position is (totout - strm.avail_out) + i */
                             }
                         }
                         line_num++;
-                    }
-
-                    //Check if we need to double the output buffer size
-                    if (out_idx == buffsize-1) {
-                        buffsize *= 2;
-                        output = (char*) realloc(output, buffsize * sizeof(char));
-                        output[buffsize] = '\0';
-                        if (NULL == output) {
-                            logger(LOG_ERROR, "Got NULL returned from realloc, failing");
+                    } else if (line_num % 4 == 2) { //the sequence 
+                        if (strm.next_out[i] == 'A')
+                            st->A++;
+                        else if (strm.next_out[i] == 'C')
+                            st->C++;
+                        else if (strm.next_out[i] == 'G')
+                            st->G++;
+                        else if (strm.next_out[i] == 'T')
+                            st->T++;
+                        else if (strm.next_out[i] == 'N')
+                            st->N++;
+                        else{
+                            printf("Fatal. Encountered unknown nucleotide: %c\n", strm.next_out[i]);
                             exit(1);
                         }
+
                     }
                 }
             }
@@ -492,8 +501,7 @@ char * extract(char * filename, struct access *index, struct point * this,
     fclose(in);
     (void)inflateEnd(&strm);
 
-    output[out_idx] = '\0';
-    return output;
+    return st;
 
 }
 
@@ -523,13 +531,7 @@ void * task(void *arg) {
 
     /* Get the block structure */
     struct point * this_block = ta.index->list + block_num;
-    char * ret = extract(ta.filename, ta.index, this_block, seq_offset, nchunks);
-
-    /* check that we got some data */
-    if (strlen(ret) < 0) {
-        logger(LOG_ERROR, "Thread returned < 0 length string");
-        exit(-1);
-    }
+    struct stats * ret = extract(ta.filename, ta.index, this_block, seq_offset, nchunks);
 
     pthread_exit((void *) ret);
 }
@@ -763,41 +765,22 @@ int main(int argc, char *argv[]) {
         pthread_create(&threads[i], NULL, task, &args[i]);
     }
 
-    char * thread_results[MAXTHREADS];
+    struct stats * thread_results[MAXTHREADS];
     // wait for threads to finish
     for (int i = 0; i < num_threads; i++) {
         pthread_join(threads[i], (void **) &thread_results[i]);
-        //pthread_join(threads[i], (void *) thread_results[i]);
-        //thread_results[i] = malloc(strlen(res));
-        //strncpy(thread_results[i], res, strlen(res));
-
-        //printf("Thread: %d\n", i);
-        //printf("i: %d: %s\n", i, res);
     }
 
-    off_t size = 0;
+    struct stats total_stats = {0};
     for (int i = 0; i < num_threads; i++) {
-/*
-        printf("%s", thread_results[i]);
-        fflush(stdout);
-*/
-        size += strlen(thread_results[i]);
+        total_stats.A += thread_results[i]->A;
+        total_stats.C += thread_results[i]->C;
+        total_stats.G += thread_results[i]->G;
+        total_stats.T += thread_results[i]->T;
+        total_stats.N += thread_results[i]->N;
     }
 
-    printf("total len: %ld\n", size);
-
-    FILE* file = fopen("output.txt", "w");
-    if (file == NULL) {
-        perror("Failed to open file");
-        return 1;
-    }
-
-    for (int i = 0; i < num_threads; i++) {
-        fputs(thread_results[i], file);
-        //fputc('\n', file); // add newline character after each string
-    }
-
-    fclose(file);
+    printf("A: %ld C: %ld G: %ld T: %ld N: %ld Total: %ld\n", total_stats.A, total_stats.C, total_stats.G, total_stats.T, total_stats.N, total_stats.A + total_stats.C + total_stats.G + total_stats.T + total_stats.N);
 
     return 0;
 }
